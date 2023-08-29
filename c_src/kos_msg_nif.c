@@ -138,8 +138,6 @@ thr_main(void* obj)
     status = setup_msg_server_transport(p_env);
     kos_assert_created(status, NULL);
 
-    // initial status is OK.
-    kos_msg_t msg = kos_msg_new_status(STATUS_OK);
     server_reply_cap = kos_cnode_cap(p_env->p_cnode, KOS_THREAD_SLOT_REPLY);
 
     while(true){
@@ -172,9 +170,9 @@ thr_main(void* obj)
         enif_make_ulong(env, badge),
         enif_make_ulong(env, caller),
         enif_make_tuple4(env,
-          enif_make_ulong(env, msg.label),
-          enif_make_ulong(env, msg.param),
-          enif_make_uint(env, kos_msg_transfer_token(msg.metadata)),
+          enif_make_ulong(env, label),
+          enif_make_ulong(env, param),
+          enif_make_uint(env, kos_msg_transfer_token(metadata)),
           payload_term));
 
       enif_mutex_lock(pid_mutex);
