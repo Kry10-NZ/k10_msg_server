@@ -138,8 +138,6 @@ thr_main(void* obj)
     status = setup_msg_server_transport(p_env);
     kos_assert_created(status, NULL);
 
-    // initial status is OK.
-    kos_msg_t msg = kos_msg_new_status(STATUS_OK);
     server_reply_cap = kos_cnode_cap(p_env->p_cnode, KOS_THREAD_SLOT_REPLY);
 
     while(true){
@@ -167,14 +165,21 @@ thr_main(void* obj)
       unsigned char *bin = enif_make_new_binary(env, recv_payload_size, &payload_term);
       memcpy(bin, kos_msg_server_payload(), recv_payload_size);
 
+      kos_token_t xfer_token_slot = 0; // by default no token
+      if (kos_msg_transfer_token(metadata) > 0) {
+	// sjw: FIXME: maybe let the controller know about the error instead of asserting?
+	kos_assert_ok(kos_msg_token_slot_pool_alloc(&xfer_token_slot), NULL);
+	kos_assert_ok(kos_msg_token_move(xfer_token_slot, kos_msg_transfer_token(metadata)), NULL);
+      }
+      
       ERL_NIF_TERM msg_term =  enif_make_tuple4(env,
         enif_make_atom(env, "kos_msg"),
         enif_make_ulong(env, badge),
         enif_make_ulong(env, caller),
         enif_make_tuple4(env,
-          enif_make_ulong(env, msg.label),
-          enif_make_ulong(env, msg.param),
-          enif_make_uint(env, kos_msg_transfer_token(msg.metadata)),
+          enif_make_ulong(env, label),
+          enif_make_ulong(env, param),
+          enif_make_uint(env, xfer_token_slot),
           payload_term));
 
       enif_mutex_lock(pid_mutex);
