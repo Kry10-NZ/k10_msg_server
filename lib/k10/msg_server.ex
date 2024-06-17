@@ -65,7 +65,7 @@ defmodule K10.MsgServer do
   def kos_dir_query_str(_protocol_name), do: :erlang.nif_error("Did not find kos_dir_query_str")
   def kos_dir_request_str(_protocol_name, _empty_token_slot, _msg), do: :erlang.nif_error("Did not find kos_dir_request_str")
 
-
+  def kos_status_atom_map(), do: :erlang.nif_error("Did not find kos_status_atom_map")
 
   @doc false
   def load_nifs do

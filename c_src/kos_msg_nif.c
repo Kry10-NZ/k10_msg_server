@@ -30,18 +30,35 @@
     ATOM_DECL(kos_status_unauthorized);            \
     ATOM_DECL(kos_status_unavailable);
 
+#define KOS_STATUS_MAP \
+    STATUS_DECL(kos_status_ok, STATUS_OK)                              \
+    STATUS_DECL(kos_status_created, STATUS_CREATED)                    \
+    STATUS_DECL(kos_status_at_token_limit, STATUS_AT_TOKEN_LIMIT)      \
+    STATUS_DECL(kos_status_bad_request, STATUS_BAD_REQUEST)            \
+    STATUS_DECL(kos_status_conflict, STATUS_CONFLICT)                  \
+    STATUS_DECL(kos_status_internal_error, STATUS_INTERNAL_ERROR)      \
+    STATUS_DECL(kos_status_invalid_token, STATUS_INVALID_TOKEN)	       \
+    STATUS_DECL(kos_status_no_reply, STATUS_NO_REPLY)		       \
+    STATUS_DECL(kos_status_not_enough_memory, STATUS_NOT_ENOUGH_MEMORY)\
+    STATUS_DECL(kos_status_not_found, STATUS_NOT_FOUND)		       \
+    STATUS_DECL(kos_status_pong, STATUS_PONG)			       \
+    STATUS_DECL(kos_status_unauthorized, STATUS_UNAUTHORIZED)	       \
+    STATUS_DECL(kos_status_unavailable, STATUS_UNAVAILABLE)            \
+    STATUS_DECL(kos_status_invalid_argument, seL4_InvalidArgument)
+
 static ErlNifMutex * pid_mutex;
 static ErlNifPid pid;
 static ErlNifTid msg_thread;
 static kos_cap_t server_reply_cap;
+
 #define ATOM_DECL(A) static ERL_NIF_TERM atom_##A
 ATOMS
 #undef ATOM_DECL
 
 static void* thr_main(void* obj);
+
 static int load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
 {
-
 #define ATOM_DECL(A) atom_##A = enif_make_atom(env, #A)
 ATOMS
 #undef ATOM_DECL
@@ -499,6 +516,27 @@ static ERL_NIF_TERM n_kos_dir_request_str(ErlNifEnv* env, int argc, const ERL_NI
       payload_term));
 }
 
+static ERL_NIF_TERM n_kos_status_atom_map(ErlNifEnv* env, int _argc, const ERL_NIF_TERM _argv[]) {
+  // If we don't construct a new NIF here we get a segfault.
+  ERL_NIF_TERM map;
+  
+#define STATUS_DECL(k, v) enif_make_atom(env, #k) ,
+  ERL_NIF_TERM keys[] = {
+    KOS_STATUS_MAP
+  };
+#undef STATUS_DECL
+#define STATUS_DECL(k, v)  enif_make_uint(env, v) , 
+  ERL_NIF_TERM values[] = {
+    KOS_STATUS_MAP
+  };
+#undef STATUS_DECL
+  
+  kos_assert( enif_make_map_from_arrays(env, keys, values, sizeof(keys) / sizeof(keys[0]), &map)
+	     , "Unable to create status atom map");
+  
+  return map;
+}
+
 static ErlNifFunc nif_funcs[] = {
   // {erl_function_name, erl_function_arity, c_function}
   {"kos_msg_ping", 0, n_kos_msg_ping, 0},
@@ -519,14 +557,15 @@ static ErlNifFunc nif_funcs[] = {
   {"kos_dir_unpublish_str", 1, n_kos_dir_unpublish_str, 0},
   {"kos_dir_query_str", 1, n_kos_dir_query_str, 0},
   {"kos_dir_request_str", 3, n_kos_dir_request_str, 0},
+  
   // Not currently supported
   // {"kos_dir_subscribe_str", 1, n_kos_dir_subscribe_str, 0},
   // {"kos_dir_unsubscribe_str", 1, n_kos_dir_unsubscribe_str, 0},
 
   {"set_controlling_pid", 1, n_set_controlling_pid, 0},
-  {"reply", 1, n_reply, 0}
+  {"reply", 1, n_reply, 0},
 
-
+  {"kos_status_atom_map", 0, n_kos_status_atom_map, 0},
 };
 
 ERL_NIF_INIT(Elixir.K10.MsgServer, nif_funcs, load, NULL, NULL, NULL)
