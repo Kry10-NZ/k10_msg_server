@@ -516,6 +516,35 @@ static ERL_NIF_TERM n_kos_dir_request_str(ErlNifEnv* env, int argc, const ERL_NI
       payload_term));
 }
 
+static ERL_NIF_TERM n_kos_msg_queue_send(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
+  unsigned int token_slot;
+  int arity;
+  const ERL_NIF_TERM* in_msg;
+  ErlNifBinary payload_bin;
+  unsigned long label;
+
+  if (argc != 2
+      || !enif_get_uint(env, argv[0], &token_slot)
+      ||   token_slot >= KOS_MSG_TOKENS_PER_APP
+      || !enif_get_tuple(env, argv[1], &arity, &in_msg)
+      ||   arity != 2
+      ||   !enif_get_ulong(env, in_msg[0], &label)
+      ||   !enif_inspect_binary(env, in_msg[1], &payload_bin)
+      ) {
+    return enif_make_badarg(env);
+  }
+
+  kos_queue_msg_t msg = {.label = label };
+
+  if(payload_bin.size >= sizeof(msg.bytes))
+    return enif_make_badarg(env);
+    
+  memcpy(msg.bytes, payload_bin.data, payload_bin.size);
+  kos_status_t status = kos_msg_queue_send(token_slot, &msg);
+
+  return kos_status_to_atom(status);
+}
+
 static ERL_NIF_TERM n_kos_status_atom_map(ErlNifEnv* env, int _argc, const ERL_NIF_TERM _argv[]) {
   // If we don't construct a new NIF here we get a segfault.
   ERL_NIF_TERM map;
@@ -565,6 +594,8 @@ static ErlNifFunc nif_funcs[] = {
   {"set_controlling_pid", 1, n_set_controlling_pid, 0},
   {"reply", 1, n_reply, 0},
 
+  {"kos_msg_queue_send", 2, n_kos_msg_queue_send, 0},
+  
   {"kos_status_atom_map", 0, n_kos_status_atom_map, 0},
 };
 

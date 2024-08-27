@@ -43,7 +43,8 @@ defmodule K10.MsgServer do
   defmacro kos_c_string(binary), do: binary <> "\0"
 
   def kos_msg_new(label, param, transfer_token, payload), do: {label, param, transfer_token, payload}
-
+  def kos_queue_msg_new(label, payload), do: {label, payload}
+  
   def set_controlling_pid(_pid), do: :erlang.nif_error("Did not find set_controlling_pid")
   def reply(_opts), do: :erlang.nif_error("Did not find reply")
   def kos_msg_ping(), do: :erlang.nif_error("Did not find kos_msg_ping")
@@ -65,6 +66,8 @@ defmodule K10.MsgServer do
   def kos_dir_query_str(_protocol_name), do: :erlang.nif_error("Did not find kos_dir_query_str")
   def kos_dir_request_str(_protocol_name, _empty_token_slot, _msg), do: :erlang.nif_error("Did not find kos_dir_request_str")
 
+  def kos_msg_queue_send(_token, _queue_msg), do: :erlang.nif_error("Did not find kos_queue_msg_send")
+  
   def kos_status_atom_map(), do: :erlang.nif_error("Did not find kos_status_atom_map")
 
   @doc false
