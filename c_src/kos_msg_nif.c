@@ -431,7 +431,7 @@ static ERL_NIF_TERM n_kos_msg_send(ErlNifEnv* env, int argc, const ERL_NIF_TERM 
   return kos_status_to_atom(status);
 }
 
-static ERL_NIF_TERM n_kos_dir_publish_str(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
+static ERL_NIF_TERM n_kos_dir_publish(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
   ErlNifBinary protocol_bin;
   unsigned long request_label;
   unsigned long request_badge;
@@ -445,33 +445,33 @@ static ERL_NIF_TERM n_kos_dir_publish_str(ErlNifEnv* env, int argc, const ERL_NI
     return enif_make_badarg(env);
   }
 
-  kos_status_t status = kos_dir_publish_str(protocol_bin.data, request_label, request_badge, request_flags);
+  kos_status_t status = kos_dir_publish(protocol_bin.data, request_label, request_badge, request_flags);
   return kos_status_to_atom(status);
 }
 
-static ERL_NIF_TERM n_kos_dir_unpublish_str(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
+static ERL_NIF_TERM n_kos_dir_unpublish(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
   ErlNifBinary protocol_bin;
   if (argc != 1
       || !enif_inspect_binary(env, argv[0], &protocol_bin)) {
     return enif_make_badarg(env);
   }
 
-  kos_status_t status = kos_dir_unpublish_str(protocol_bin.data);
+  kos_status_t status = kos_dir_unpublish(protocol_bin.data);
   return kos_status_to_atom(status);
 }
 
-static ERL_NIF_TERM n_kos_dir_query_str(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
+static ERL_NIF_TERM n_kos_dir_query(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
   ErlNifBinary protocol_bin;
   if (argc != 1
       || !enif_inspect_binary(env, argv[0], &protocol_bin)) {
     return enif_make_badarg(env);
   }
 
-  kos_status_t status = kos_dir_query_str(protocol_bin.data);
+  kos_status_t status = kos_dir_query(protocol_bin.data);
   return kos_status_to_atom(status);
 }
 
-static ERL_NIF_TERM n_kos_dir_request_str(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
+static ERL_NIF_TERM n_kos_dir_request(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
   ErlNifBinary protocol_bin;
   unsigned int empty_token_slot;
   int arity;
@@ -497,7 +497,7 @@ static ERL_NIF_TERM n_kos_dir_request_str(ErlNifEnv* env, int argc, const ERL_NI
   kos_msg_t msg = kos_msg_new(label, param, payload_bin.size, transfer_token, 0);
 
   memcpy(kos_msg_client_payload(), payload_bin.data, payload_bin.size);
-  kos_status_t status = kos_dir_request_str(protocol_bin.data, empty_token_slot, &msg);
+  kos_status_t status = kos_dir_request(protocol_bin.data, empty_token_slot, &msg);
   if (status != STATUS_OK) {
     return kos_status_to_atom(status);
   }
@@ -582,14 +582,14 @@ static ErlNifFunc nif_funcs[] = {
   {"kos_msg_send", 2, n_kos_msg_send, 0},
   {"kos_msg_send_dirty", 2, n_kos_msg_send, 0},
 
-  {"kos_dir_publish_str", 4, n_kos_dir_publish_str, 0},
-  {"kos_dir_unpublish_str", 1, n_kos_dir_unpublish_str, 0},
-  {"kos_dir_query_str", 1, n_kos_dir_query_str, 0},
-  {"kos_dir_request_str", 3, n_kos_dir_request_str, 0},
+  {"kos_dir_publish", 4, n_kos_dir_publish, 0},
+  {"kos_dir_unpublish", 1, n_kos_dir_unpublish, 0},
+  {"kos_dir_query", 1, n_kos_dir_query, 0},
+  {"kos_dir_request", 3, n_kos_dir_request, 0},
   
   // Not currently supported
-  // {"kos_dir_subscribe_str", 1, n_kos_dir_subscribe_str, 0},
-  // {"kos_dir_unsubscribe_str", 1, n_kos_dir_unsubscribe_str, 0},
+  // {"kos_dir_subscribe", 1, n_kos_dir_subscribe, 0},
+  // {"kos_dir_unsubscribe", 1, n_kos_dir_unsubscribe, 0},
 
   {"set_controlling_pid", 1, n_set_controlling_pid, 0},
   {"reply", 1, n_reply, 0},
