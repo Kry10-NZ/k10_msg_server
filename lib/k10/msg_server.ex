@@ -8,7 +8,7 @@ defmodule K10.MsgServer do
 
   import Bitwise
 
-  @kos_status_ok 11
+  @kos_status_ok 128
   defmacro kos_status_ok, do: @kos_status_ok
 
   #define KOS_MSG_TOKENS_PER_APP_BITS 6
@@ -61,10 +61,10 @@ defmodule K10.MsgServer do
   def kos_msg_send(_token_slot, _msg), do: :erlang.nif_error("Did not find kos_msg_send")
   def kos_msg_send_dirty(_token_slot, _msg), do: :erlang.nif_error("Did not find kos_msg_send_dirty")
 
-  def kos_dir_publish_str(_protocol_name, _request_label, _request_badge, _request_flags), do: :erlang.nif_error("Did not find kos_dir_publish_str")
-  def kos_dir_unpublish_str(_protocol_name), do: :erlang.nif_error("Did not find kos_dir_unpublish_str")
-  def kos_dir_query_str(_protocol_name), do: :erlang.nif_error("Did not find kos_dir_query_str")
-  def kos_dir_request_str(_protocol_name, _empty_token_slot, _msg), do: :erlang.nif_error("Did not find kos_dir_request_str")
+  def kos_dir_bind(_port_name, _request_label, _request_badge, _request_flags), do: :erlang.nif_error("Did not find kos_dir_publish")
+  def kos_dir_unbind(_port_name), do: :erlang.nif_error("Did not find kos_dir_unpublish")
+  def kos_dir_query(_port_name), do: :erlang.nif_error("Did not find kos_dir_query")
+  def kos_dir_request(_port_name, _empty_token_slot, _reply_flags, _msg), do: :erlang.nif_error("Did not find kos_dir_request")
 
   def kos_msg_queue_send(_token, _queue_msg), do: :erlang.nif_error("Did not find kos_queue_msg_send")
   

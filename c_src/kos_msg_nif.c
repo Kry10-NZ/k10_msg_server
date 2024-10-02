@@ -188,7 +188,7 @@ thr_main(void* obj)
 	kos_assert_ok(kos_msg_token_slot_pool_alloc(&xfer_token_slot), NULL);
 	kos_assert_ok(kos_msg_token_move(xfer_token_slot, kos_msg_transfer_token(metadata)), NULL);
       }
-      
+
       ERL_NIF_TERM msg_term =  enif_make_tuple4(env,
         enif_make_atom(env, "kos_msg"),
         enif_make_ulong(env, badge),
@@ -239,27 +239,54 @@ static ERL_NIF_TERM n_set_controlling_pid(ErlNifEnv* env, int argc, const ERL_NI
 
 }
 
-
-static ERL_NIF_TERM n_reply(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
+// Following the enif_* functions, this function returns 0 on failure,
+// non-zero on success.
+static int enif_to_msg(ErlNifEnv* env, const ERL_NIF_TERM tuple,
+                       kos_msg_t *msg, void* payload_target) {
   int arity;
   const ERL_NIF_TERM* in_msg;
+
   unsigned long label;
   unsigned long param;
   unsigned int transfer_token;
   ErlNifBinary payload_bin;
-  if (argc != 1
-      || !enif_get_tuple(env, argv[0], &arity, &in_msg)
-      ||   arity != 4
-      || !enif_get_ulong(env, in_msg[0], &label)
-      || !enif_get_ulong(env, in_msg[1], &param)
-      || !enif_get_uint(env, in_msg[2], &transfer_token)
-      || !enif_inspect_binary(env, in_msg[3], &payload_bin)) {
+
+  int decode_failed = !enif_get_tuple(env, tuple, &arity, &in_msg)
+    ||   arity != 4
+    || !enif_get_ulong(env, in_msg[0], &label)
+    || !enif_get_ulong(env, in_msg[1], &param)
+    || !enif_get_uint(env, in_msg[2], &transfer_token)
+    || !enif_inspect_binary(env, in_msg[3], &payload_bin);
+
+  if (decode_failed) {
+    return 0;
+  } else {
+    *msg = kos_msg_new(label, param, payload_bin.size, transfer_token, 0);
+    memcpy(payload_target, payload_bin.data, payload_bin.size);
+    return 1;
+  }
+}
+
+static ERL_NIF_TERM msg_to_enif(ErlNifEnv* env, const kos_msg_t *msg, const void* payload_src) {
+  ERL_NIF_TERM payload_term;
+  uint16_t ret_payload_size = kos_msg_payload_size(msg->metadata);
+  unsigned char *bin = enif_make_new_binary(env, ret_payload_size, &payload_term);
+  memcpy(bin, payload_src, ret_payload_size);
+
+  return enif_make_tuple4(env,
+                          enif_make_ulong(env, msg->label),
+                          enif_make_ulong(env, msg->param),
+                          enif_make_uint(env, kos_msg_transfer_token(msg->metadata)),
+                          payload_term);
+}
+
+static ERL_NIF_TERM n_reply(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
+  kos_msg_t msg;
+  ErlNifBinary payload_bin;
+  if (argc != 1 || !enif_to_msg(env, argv[0], &msg, _server.transport.p_payload)) {
     return enif_make_badarg(env);
   }
 
-  kos_msg_t msg = kos_msg_new(label, param, payload_bin.size, transfer_token, 0);
-
-  memcpy(_server.transport.p_payload, payload_bin.data, payload_bin.size);
   seL4_SetMR(0, msg.label);
   seL4_SetMR(1, msg.param);
   seL4_SetMR(2, msg.metadata);
@@ -360,160 +387,103 @@ static ERL_NIF_TERM n_kos_msg_token_info(ErlNifEnv* env, int argc, const ERL_NIF
 static ERL_NIF_TERM n_kos_msg_call(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
   unsigned int token_slot;
   unsigned int reply_flags;
-  int arity;
-  const ERL_NIF_TERM* in_msg;
-  ErlNifBinary payload_bin;
-  unsigned int transfer_token;
-  unsigned long label;
-  unsigned long param;
+  kos_msg_t msg;
 
   if (argc != 3
       || !enif_get_uint(env, argv[0], &token_slot)
       ||   token_slot >= KOS_MSG_TOKENS_PER_APP
       || !enif_get_uint(env, argv[1], &reply_flags)
       ||   reply_flags >= 255
-      || !enif_get_tuple(env, argv[2], &arity, &in_msg)
-      ||   arity != 4
-      ||   !enif_get_ulong(env, in_msg[0], &label)
-      ||   !enif_get_ulong(env, in_msg[1], &param)
-      ||   !enif_get_uint(env, in_msg[2], &transfer_token)
-      ||   !enif_inspect_binary(env, in_msg[3], &payload_bin)) {
+      || !enif_to_msg(env, argv[2], &msg, kos_msg_client_payload())) {
     return enif_make_badarg(env);
   }
 
-  kos_msg_t msg = kos_msg_new(label, param, payload_bin.size, transfer_token, 0);
-  memcpy(kos_msg_client_payload(), payload_bin.data, payload_bin.size);
   kos_status_t status = kos_msg_call(token_slot, reply_flags, &msg);
   if (status != STATUS_OK) {
     return kos_status_to_atom(status);
+  } else {
+    return enif_make_tuple2(env, atom_kos_status_ok, msg_to_enif(env, &msg, kos_msg_client_payload()));
   }
-
-  ERL_NIF_TERM payload_term;
-  uint16_t ret_payload_size = kos_msg_payload_size(msg.metadata);
-  unsigned char *bin = enif_make_new_binary(env, ret_payload_size, &payload_term);
-  memcpy(bin, kos_msg_client_payload(), ret_payload_size);
-
-  return enif_make_tuple2(env,
-    atom_kos_status_ok,
-    enif_make_tuple4(env,
-      enif_make_ulong(env, msg.label),
-      enif_make_ulong(env, msg.param),
-      enif_make_uint(env, kos_msg_transfer_token(msg.metadata)),
-      payload_term));
-
 }
 
 static ERL_NIF_TERM n_kos_msg_send(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
   unsigned int token_slot;
-  int arity;
-  const ERL_NIF_TERM* in_msg;
-  ErlNifBinary payload_bin;
-  unsigned int transfer_token;
-  unsigned long label;
-  unsigned long param;
+  kos_msg_t msg;
 
   if (argc != 2
       || !enif_get_uint(env, argv[0], &token_slot)
       ||   token_slot >= KOS_MSG_TOKENS_PER_APP
-      || !enif_get_tuple(env, argv[1], &arity, &in_msg)
-      ||   arity != 4
-      ||   !enif_get_ulong(env, in_msg[0], &label)
-      ||   !enif_get_ulong(env, in_msg[1], &param)
-      ||   !enif_get_uint(env, in_msg[2], &transfer_token)
-      ||   !enif_inspect_binary(env, in_msg[3], &payload_bin)) {
+      || !enif_to_msg(env, argv[1], &msg, kos_msg_client_payload())) {
     return enif_make_badarg(env);
   }
 
-  kos_msg_t msg = kos_msg_new(label, param, payload_bin.size, transfer_token, 0);
-  memcpy(kos_msg_client_payload(), payload_bin.data, payload_bin.size);
   kos_status_t status = kos_msg_send(token_slot, msg);
 
   return kos_status_to_atom(status);
 }
 
-static ERL_NIF_TERM n_kos_dir_publish_str(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
-  ErlNifBinary protocol_bin;
+static ERL_NIF_TERM n_kos_dir_bind(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
+  ErlNifBinary port_bin;
   unsigned long request_label;
   unsigned long request_badge;
   unsigned int request_flags;
 
   if (argc != 4
-      || !enif_inspect_binary(env, argv[0], &protocol_bin)
+      || !enif_inspect_binary(env, argv[0], &port_bin)
       || !enif_get_ulong(env, argv[1], &request_label)
       || !enif_get_ulong(env, argv[2], &request_badge)
       || !enif_get_uint(env, argv[3], &request_flags)) {
     return enif_make_badarg(env);
   }
 
-  kos_status_t status = kos_dir_publish_str(protocol_bin.data, request_label, request_badge, request_flags);
+  kos_status_t status = kos_dir_bind(port_bin.data, request_label, request_badge, request_flags);
   return kos_status_to_atom(status);
 }
 
-static ERL_NIF_TERM n_kos_dir_unpublish_str(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
-  ErlNifBinary protocol_bin;
+static ERL_NIF_TERM n_kos_dir_unbind(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
+  ErlNifBinary port_bin;
   if (argc != 1
-      || !enif_inspect_binary(env, argv[0], &protocol_bin)) {
+      || !enif_inspect_binary(env, argv[0], &port_bin)) {
     return enif_make_badarg(env);
   }
 
-  kos_status_t status = kos_dir_unpublish_str(protocol_bin.data);
+  kos_status_t status = kos_dir_unbind(port_bin.data);
   return kos_status_to_atom(status);
 }
 
-static ERL_NIF_TERM n_kos_dir_query_str(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
-  ErlNifBinary protocol_bin;
+static ERL_NIF_TERM n_kos_dir_query(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
+  ErlNifBinary port_bin;
   if (argc != 1
-      || !enif_inspect_binary(env, argv[0], &protocol_bin)) {
+      || !enif_inspect_binary(env, argv[0], &port_bin)) {
     return enif_make_badarg(env);
   }
 
-  kos_status_t status = kos_dir_query_str(protocol_bin.data);
+  kos_status_t status = kos_dir_query(port_bin.data);
   return kos_status_to_atom(status);
 }
 
-static ERL_NIF_TERM n_kos_dir_request_str(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
-  ErlNifBinary protocol_bin;
+static ERL_NIF_TERM n_kos_dir_request(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
+  ErlNifBinary port_bin;
   unsigned int empty_token_slot;
-  int arity;
-  const ERL_NIF_TERM* in_msg;
-  ErlNifBinary payload_bin;
-  unsigned int transfer_token;
-  unsigned long label;
-  unsigned long param;
+  unsigned int reply_flags;
+  kos_msg_t msg;
 
-  if (argc != 3
-      || !enif_inspect_binary(env, argv[0], &protocol_bin)
+  if (argc != 4
+      || !enif_inspect_binary(env, argv[0], &port_bin)
       || !enif_get_uint(env, argv[1], &empty_token_slot)
       ||   empty_token_slot >= KOS_MSG_TOKENS_PER_APP
-      || !enif_get_tuple(env, argv[2], &arity, &in_msg)
-      ||   arity != 4
-      ||   !enif_get_ulong(env, in_msg[0], &label)
-      ||   !enif_get_ulong(env, in_msg[1], &param)
-      ||   !enif_get_uint(env, in_msg[2], &transfer_token)
-      ||   !enif_inspect_binary(env, in_msg[3], &payload_bin)) {
+      || !enif_get_uint(env, argv[2], &reply_flags)
+      ||   reply_flags >= 255
+      || !enif_to_msg(env, argv[3], &msg, kos_msg_client_payload())) {
     return enif_make_badarg(env);
   }
 
-  kos_msg_t msg = kos_msg_new(label, param, payload_bin.size, transfer_token, 0);
-
-  memcpy(kos_msg_client_payload(), payload_bin.data, payload_bin.size);
-  kos_status_t status = kos_dir_request_str(protocol_bin.data, empty_token_slot, &msg);
+  kos_status_t status = kos_dir_request(port_bin.data, empty_token_slot, reply_flags, &msg);
   if (status != STATUS_OK) {
     return kos_status_to_atom(status);
   }
 
-  ERL_NIF_TERM payload_term;
-  uint16_t ret_payload_size = kos_msg_payload_size(msg.metadata);
-  unsigned char *bin = enif_make_new_binary(env, ret_payload_size, &payload_term);
-  memcpy(bin, kos_msg_client_payload(), ret_payload_size);
-
-  return enif_make_tuple2(env,
-    atom_kos_status_ok,
-    enif_make_tuple4(env,
-      enif_make_ulong(env, msg.label),
-      enif_make_ulong(env, msg.param),
-      enif_make_uint(env, kos_msg_transfer_token(msg.metadata)),
-      payload_term));
+  return enif_make_tuple2(env, atom_kos_status_ok, msg_to_enif(env, &msg, kos_msg_client_payload()));
 }
 
 static ERL_NIF_TERM n_kos_msg_queue_send(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
@@ -538,7 +508,7 @@ static ERL_NIF_TERM n_kos_msg_queue_send(ErlNifEnv* env, int argc, const ERL_NIF
 
   if(payload_bin.size >= sizeof(msg.bytes))
     return enif_make_badarg(env);
-    
+
   memcpy(msg.bytes, payload_bin.data, payload_bin.size);
   kos_status_t status = kos_msg_queue_send(token_slot, &msg);
 
@@ -548,21 +518,21 @@ static ERL_NIF_TERM n_kos_msg_queue_send(ErlNifEnv* env, int argc, const ERL_NIF
 static ERL_NIF_TERM n_kos_status_atom_map(ErlNifEnv* env, int _argc, const ERL_NIF_TERM _argv[]) {
   // If we don't construct a new NIF here we get a segfault.
   ERL_NIF_TERM map;
-  
+
 #define STATUS_DECL(k, v) enif_make_atom(env, #k) ,
   ERL_NIF_TERM keys[] = {
     KOS_STATUS_MAP
   };
 #undef STATUS_DECL
-#define STATUS_DECL(k, v)  enif_make_uint(env, v) , 
+#define STATUS_DECL(k, v)  enif_make_uint(env, v) ,
   ERL_NIF_TERM values[] = {
     KOS_STATUS_MAP
   };
 #undef STATUS_DECL
-  
+
   kos_assert( enif_make_map_from_arrays(env, keys, values, sizeof(keys) / sizeof(keys[0]), &map)
 	     , "Unable to create status atom map");
-  
+
   return map;
 }
 
@@ -582,20 +552,20 @@ static ErlNifFunc nif_funcs[] = {
   {"kos_msg_send", 2, n_kos_msg_send, 0},
   {"kos_msg_send_dirty", 2, n_kos_msg_send, 0},
 
-  {"kos_dir_publish_str", 4, n_kos_dir_publish_str, 0},
-  {"kos_dir_unpublish_str", 1, n_kos_dir_unpublish_str, 0},
-  {"kos_dir_query_str", 1, n_kos_dir_query_str, 0},
-  {"kos_dir_request_str", 3, n_kos_dir_request_str, 0},
-  
+  {"kos_dir_bind", 4, n_kos_dir_bind, 0},
+  {"kos_dir_unbind", 1, n_kos_dir_unbind, 0},
+  {"kos_dir_query", 1, n_kos_dir_query, 0},
+  {"kos_dir_request", 4, n_kos_dir_request, 0},
+
   // Not currently supported
-  // {"kos_dir_subscribe_str", 1, n_kos_dir_subscribe_str, 0},
-  // {"kos_dir_unsubscribe_str", 1, n_kos_dir_unsubscribe_str, 0},
+  // {"kos_dir_subscribe", 1, n_kos_dir_subscribe, 0},
+  // {"kos_dir_unsubscribe", 1, n_kos_dir_unsubscribe, 0},
 
   {"set_controlling_pid", 1, n_set_controlling_pid, 0},
   {"reply", 1, n_reply, 0},
 
   {"kos_msg_queue_send", 2, n_kos_msg_queue_send, 0},
-  
+
   {"kos_status_atom_map", 0, n_kos_status_atom_map, 0},
 };
 
