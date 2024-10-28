@@ -9,6 +9,8 @@
 #include <kos.h>
 #include <muslcsys/pthread_manager.h>
 
+#include <sel4/sel4.h>
+
 #define ATOMS                                      \
     ATOM_DECL(ok);                                 \
     ATOM_DECL(true);                               \
@@ -132,13 +134,13 @@ kos_status_t setup_msg_server_transport(kos_thread_environment_t* p_env) {
   kos_cap_set_receive(receive_cap);
 
   // prepare the reply cap
-  kos_cap_t reply_cap = kos_cnode_cap(p_env->p_cnode, KOS_THREAD_SLOT_REPLY);
+  server_reply_cap = kos_cnode_cap(p_env->p_cnode, KOS_THREAD_SLOT_REPLY);
 
   // a slot to hold the transport
   kos_cap_t server_cap = kos_cap_reserve();
 
   // set up the server transport
-  status = kos_msg_server_create(server_cap, reply_cap, token_slot, &_server);
+  status = kos_msg_server_create(server_cap, server_reply_cap, token_slot, &_server);
   // no longer need to receive caps.
   kos_cap_clear_receive();
 
@@ -155,10 +157,12 @@ thr_main(void* obj)
     status = setup_msg_server_transport(p_env);
     kos_assert_created(status, NULL);
 
-    server_reply_cap = kos_cnode_cap(p_env->p_cnode, KOS_THREAD_SLOT_REPLY);
-
     while(true){
-      seL4_MessageInfo_t sel4_msg = seL4_Recv(_server.transport.ep_cptr, NULL, _server.reply_cptr);
+#ifdef CONFIG_KERNEL_MCS
+      seL4_MessageInfo_t sel4_msg = seL4_Recv(_server.transport.ep_cptr, NULL, server_reply_cap);
+#else
+      seL4_MessageInfo_t sel4_msg = seL4_Recv(_server.transport.ep_cptr, NULL);
+#endif
 
       // fill out the message struct
       // the caller badge is in the label
@@ -291,7 +295,7 @@ static ERL_NIF_TERM n_reply(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
   seL4_SetMR(1, msg.param);
   seL4_SetMR(2, msg.metadata);
 
-  seL4_Send(_server.reply_cptr, seL4_MessageInfo_new(STATUS_OK, 0, 0, 3));
+  seL4_Send(server_reply_cap, seL4_MessageInfo_new(STATUS_OK, 0, 0, 3));
   return atom_ok;
 }
 
@@ -374,7 +378,7 @@ static ERL_NIF_TERM n_kos_msg_token_info(ErlNifEnv* env, int argc, const ERL_NIF
     return enif_make_badarg(env);
   }
 
-  seL4_Word token_flags;
+  uint8_t token_flags;
   kos_status_t status = kos_msg_token_info(token_slot, &token_flags);
   if (status == STATUS_OK) {
     return enif_make_tuple2(env, atom_kos_status_ok, enif_make_uint(env, token_flags));
