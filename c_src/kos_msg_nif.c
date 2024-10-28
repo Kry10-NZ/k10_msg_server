@@ -9,6 +9,8 @@
 #include <kos.h>
 #include <muslcsys/pthread_manager.h>
 
+#include <sel4/sel4.h>
+
 #define ATOMS                                      \
     ATOM_DECL(ok);                                 \
     ATOM_DECL(true);                               \
@@ -44,7 +46,7 @@
     STATUS_DECL(kos_status_pong, STATUS_PONG)			       \
     STATUS_DECL(kos_status_unauthorized, STATUS_UNAUTHORIZED)	       \
     STATUS_DECL(kos_status_unavailable, STATUS_UNAVAILABLE)            \
-    STATUS_DECL(kos_status_invalid_argument, seL4_InvalidArgument)
+    STATUS_DECL(kos_status_invalid_argument, KOS_SYS_ERRNO_INVALID_ARGUMENT)
 
 static ErlNifMutex * pid_mutex;
 static ErlNifPid pid;
@@ -81,7 +83,7 @@ ATOMS
 
 static ERL_NIF_TERM kos_status_to_atom(kos_status_t status) {
   switch(status) {
-    case seL4_InvalidArgument:
+    case KOS_SYS_ERRNO_INVALID_ARGUMENT:
       return atom_kos_status_invalid_argument;
     case STATUS_AT_TOKEN_LIMIT:
       return atom_kos_status_at_token_limit;
@@ -132,13 +134,13 @@ kos_status_t setup_msg_server_transport(kos_thread_environment_t* p_env) {
   kos_cap_set_receive(receive_cap);
 
   // prepare the reply cap
-  kos_cap_t reply_cap = kos_cnode_cap(p_env->p_cnode, KOS_THREAD_SLOT_REPLY);
+  server_reply_cap = kos_cnode_cap(p_env->p_cnode, KOS_THREAD_SLOT_REPLY);
 
   // a slot to hold the transport
   kos_cap_t server_cap = kos_cap_reserve();
 
   // set up the server transport
-  status = kos_msg_server_create(server_cap, reply_cap, token_slot, &_server);
+  status = kos_msg_server_create(server_cap, server_reply_cap, token_slot, &_server);
   // no longer need to receive caps.
   kos_cap_clear_receive();
 
@@ -155,27 +157,20 @@ thr_main(void* obj)
     status = setup_msg_server_transport(p_env);
     kos_assert_created(status, NULL);
 
-    server_reply_cap = kos_cnode_cap(p_env->p_cnode, KOS_THREAD_SLOT_REPLY);
-
     while(true){
-      seL4_MessageInfo_t sel4_msg = seL4_Recv(_server.transport.ep_cptr, NULL, _server.reply_cptr);
+      kos_ep_msg_info_t ep_msg = kos_cap_recv(_server.transport.ep_cptr, NULL, kos_cap_cptr(server_reply_cap));
 
       // fill out the message struct
       // the caller badge is in the label
-      seL4_Word caller = seL4_MessageInfo_get_label(sel4_msg);
+      kos_word_t caller = kos_ep_msg_info_get_label(ep_msg);
       seL4_Word label = seL4_GetMR(0);
       seL4_Word param = seL4_GetMR(1);
       seL4_Word metadata = seL4_GetMR(2);
       seL4_Word badge = seL4_GetMR(3);
       // sanity check
-      kos_assert_eq(seL4_MessageInfo_get_length(sel4_msg), 4, "Invalid reply_receive response");
+      kos_assert_eq(kos_ep_msg_info_get_length(ep_msg), 4, "Invalid reply_receive response");
 
-#ifndef CONFIG_KERNEL_MCS
-      seL4_CNode_SaveCaller(
-        kos_app_root_cap(),
-        kos_cap_index(server_reply_cap),
-        kos_cap_depth(server_reply_cap));
-#endif
+      kos_cnode_save_caller(kos_app_root_cap(), kos_cap_index(server_reply_cap), kos_cap_depth(server_reply_cap));
 
       ERL_NIF_TERM payload_term;
       uint16_t recv_payload_size = kos_msg_payload_size(metadata);
@@ -291,7 +286,7 @@ static ERL_NIF_TERM n_reply(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
   seL4_SetMR(1, msg.param);
   seL4_SetMR(2, msg.metadata);
 
-  seL4_Send(_server.reply_cptr, seL4_MessageInfo_new(STATUS_OK, 0, 0, 3));
+  kos_cap_send(kos_cap_cptr(server_reply_cap), kos_ep_msg_info_new(STATUS_OK, 0, 0, 3));
   return atom_ok;
 }
 
@@ -374,7 +369,7 @@ static ERL_NIF_TERM n_kos_msg_token_info(ErlNifEnv* env, int argc, const ERL_NIF
     return enif_make_badarg(env);
   }
 
-  seL4_Word token_flags;
+  uint8_t token_flags;
   kos_status_t status = kos_msg_token_info(token_slot, &token_flags);
   if (status == STATUS_OK) {
     return enif_make_tuple2(env, atom_kos_status_ok, enif_make_uint(env, token_flags));
