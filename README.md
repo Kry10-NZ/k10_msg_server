@@ -13,6 +13,13 @@ def deps do
 end
 ```
 
+Version 1.0.0 of this library introduces breaking changes that currently work
+KOS version 1.0.0-epsilon. It will not work with nightly releases that are
+released before 15/10/24 (DD-MM-YY).
+
+Version 0.1.0 of this library works with KOS version 1.0.0-gamma and possibly
+nightly releases that were released before 15/10/24 (DD-MM-YY).
+
 A simple server example:
 
 ```elixir
