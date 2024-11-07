@@ -8,7 +8,7 @@ defmodule K10.MsgServer.MixProject do
   def project do
     [
       app: :k10_msg_server,
-      version: "0.1.0",
+      version: "1.0.0",
       elixir: "~> 1.14",
       compilers: [:elixir_make | Mix.compilers()],
       start_permanent: Mix.env() == :prod,
