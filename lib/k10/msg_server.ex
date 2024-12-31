@@ -44,7 +44,7 @@ defmodule K10.MsgServer do
 
   def kos_msg_new(label, param, transfer_token, payload), do: {label, param, transfer_token, payload}
   def kos_queue_msg_new(label, payload), do: {label, payload}
-  
+
   def set_controlling_pid(_pid), do: :erlang.nif_error("Did not find set_controlling_pid")
   def reply(_opts), do: :erlang.nif_error("Did not find reply")
   def kos_msg_ping(), do: :erlang.nif_error("Did not find kos_msg_ping")
@@ -64,10 +64,11 @@ defmodule K10.MsgServer do
   def kos_dir_bind(_port_name, _request_label, _request_badge, _request_flags), do: :erlang.nif_error("Did not find kos_dir_publish")
   def kos_dir_unbind(_port_name), do: :erlang.nif_error("Did not find kos_dir_unpublish")
   def kos_dir_query(_port_name), do: :erlang.nif_error("Did not find kos_dir_query")
-  def kos_dir_request(_port_name, _empty_token_slot, _reply_flags, _msg), do: :erlang.nif_error("Did not find kos_dir_request")
+  def kos_dir_request(_port_name, _empty_token_slot, _reply_flags), do: :erlang.nif_error("Did not find kos_dir_request/3")
+  def kos_dir_request(_port_name, _empty_token_slot, _reply_flags, _msg), do: :erlang.nif_error("Did not find kos_dir_request/4")
 
   def kos_msg_queue_send(_token, _queue_msg), do: :erlang.nif_error("Did not find kos_queue_msg_send")
-  
+
   def kos_status_atom_map(), do: :erlang.nif_error("Did not find kos_status_atom_map")
 
   @doc false

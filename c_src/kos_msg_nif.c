@@ -481,6 +481,24 @@ static ERL_NIF_TERM n_kos_dir_request(ErlNifEnv* env, int argc, const ERL_NIF_TE
   return enif_make_tuple2(env, atom_kos_status_ok, msg_to_enif(env, &msg, kos_msg_client_payload()));
 }
 
+static ERL_NIF_TERM n_kos_dir_request_no_msg(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
+  ErlNifBinary port_bin;
+  unsigned int empty_token_slot;
+  unsigned int reply_flags;
+
+  if (argc != 3
+      || !enif_inspect_binary(env, argv[0], &port_bin)
+      || !enif_get_uint(env, argv[1], &empty_token_slot)
+      ||   empty_token_slot >= KOS_MSG_TOKENS_PER_APP
+      || !enif_get_uint(env, argv[2], &reply_flags)
+      ||   reply_flags >= 255) {
+    return enif_make_badarg(env);
+  }
+
+  kos_status_t status = kos_dir_request(port_bin.data, empty_token_slot, reply_flags, NULL);
+  return kos_status_to_atom(status);
+}
+
 static ERL_NIF_TERM n_kos_msg_queue_send(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]) {
   unsigned int token_slot;
   int arity;
@@ -550,6 +568,7 @@ static ErlNifFunc nif_funcs[] = {
   {"kos_dir_bind", 4, n_kos_dir_bind, 0},
   {"kos_dir_unbind", 1, n_kos_dir_unbind, 0},
   {"kos_dir_query", 1, n_kos_dir_query, 0},
+  {"kos_dir_request", 3, n_kos_dir_request_no_msg, 0},
   {"kos_dir_request", 4, n_kos_dir_request, 0},
 
   // Not currently supported
